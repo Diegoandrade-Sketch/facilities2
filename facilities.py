@@ -22,12 +22,11 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 1rem;
     }
     .resumo-valor { font-size: 1.8rem; font-weight: 800; color: var(--primary); }
-    .resumo-subtitulo { font-size: 0.85rem; color: #666; text-transform: uppercase; margin-top: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================================
-# 2. CAMADA DE DADOS (CLEANING)
+# 2. CAMADA DE DADOS
 # =========================================
 
 def limpar_valor(valor):
@@ -39,64 +38,65 @@ def limpar_valor(valor):
         return 0.0
 
 @st.cache_data
-def carregar_dados_facilities():
-    # Procura o arquivo automaticamente para evitar erro de nome
-    target_file = "dados_marco_2026.csv"
+def carregar_dados():
+    # NOME EXATO QUE DEVE ESTAR NO GITHUB
+    nome_prioritario = "dados_marco_2026.csv"
     
-    if not os.path.exists(target_file):
-        # Fallback: procura qualquer arquivo que contenha 'MAR 2026'
-        for f in os.listdir('.'):
-            if "MAR 2026" in f and f.endswith(".csv"):
-                target_file = f
-                break
+    # 1. Tenta o nome exato
+    if os.path.exists(nome_prioritario):
+        target = nome_prioritario
+    else:
+        # 2. Se não achar, procura qualquer CSV que tenha "MAR 2026"
+        arquivos = [f for f in os.listdir('.') if f.endswith('.csv')]
+        fallback = [f for f in arquivos if "MAR 2026" in f.upper()]
+        if fallback:
+            target = fallback[0]
         else:
             return None
 
     try:
-        df_raw = pd.read_csv(target_file, header=None)
+        # Leitura considerando o cabeçalho na linha 2 (skiprows=1)
+        df_raw = pd.read_csv(target, header=None)
         
-        # Filtros baseados na estrutura da planilha de Março
-        custos_op = df_raw.iloc[3:7, [1, 2]].copy()
-        custos_op.columns = ['Descricao', 'Valor']
-        custos_op['Valor'] = custos_op['Valor'].apply(limpar_valor)
+        # Mapeamento Inteligente baseado na estrutura MAR 2026
+        # Custos Operacionais
+        custos = df_raw.iloc[3:7, [1, 2]].copy()
+        custos.columns = ['Descricao', 'Valor']
+        custos['Valor'] = custos['Valor'].apply(limpar_valor)
 
-        veiculos = df_raw.iloc[10:16, [1, 2, 3, 4]].copy()
-        veiculos.columns = ['Condutor', 'Valor', 'Contrato', 'Detalhe']
-        veiculos['Valor'] = veiculos['Valor'].apply(limpar_valor)
+        # Veículos
+        veic = df_raw.iloc[10:16, [1, 2, 3, 4]].copy()
+        veic.columns = ['Condutor', 'Valor', 'Contrato', 'Detalhe']
+        veic['Valor'] = veic['Valor'].apply(limpar_valor)
 
-        viagens = df_raw.iloc[19:25, [1, 2, 3]].copy()
-        viagens.columns = ['Descricao', 'Valor', 'Contexto']
-        viagens['Valor'] = viagens['Valor'].apply(limpar_valor)
-
-        return {"custos": custos_op, "veiculos": veiculos, "viagens": viagens}
-    except Exception:
+        return {"custos": custos, "veiculos": veic, "arquivo_lido": target}
+    except Exception as e:
+        st.error(f"Erro na leitura: {e}")
         return None
 
 # =========================================
-# 3. INTERFACE PRINCIPAL
+# 3. INTERFACE
 # =========================================
 
 st.markdown('<div class="hero-title">Facilities Intelligence</div>', unsafe_allow_html=True)
 
-dados = carregar_dados_facilities()
+dados = carregar_dados()
 
 if dados:
-    total_custos = dados['custos']['Valor'].sum()
-    total_veiculos = dados['veiculos']['Valor'].sum()
-    total_viagens = dados['viagens']['Valor'].sum()
-    investimento_total = total_custos + total_veiculos + total_viagens
+    total = dados['custos']['Valor'].sum() + dados['veiculos']['Valor'].sum()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f'<div class="resumo-card"><span>Total Consolidado</span><div class="resumo-valor">R$ {total:,.2f}</div></div>', unsafe_allow_html=True)
+    with col2:
+        st.info(f"Lendo arquivo: {dados['arquivo_lido']}")
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.markdown(f'<div class="resumo-card"><span>Total Março</span><div class="resumo-valor">R$ {investimento_total:,.2f}</div></div>', unsafe_allow_html=True)
-    with c2:
-        st.markdown(f'<div class="resumo-card" style="border-top-color:#f59e0b;"><span>Operacional</span><div class="resumo-valor">R$ {total_custos:,.2f}</div></div>', unsafe_allow_html=True)
-    with c3:
-        st.markdown(f'<div class="resumo-card" style="border-top-color:#2e7d32;"><span>Veículos</span><div class="resumo-valor">R$ {total_veiculos:,.2f}</div></div>', unsafe_allow_html=True)
-    with c4:
-        st.markdown(f'<div class="resumo-card" style="border-top-color:#3b82f6;"><span>Viagens</span><div class="resumo-valor">R$ {total_viagens:,.2f}</div></div>', unsafe_allow_html=True)
-
-    st.subheader("📊 Detalhamento de Custos")
-    st.dataframe(dados['custos'], use_container_width=True)
+    st.subheader("📊 Detalhe de Custos Operacionais")
+    st.table(dados['custos'])
+    
+    st.subheader("🚗 Gestão de Veículos")
+    st.dataframe(dados['veiculos'], use_container_width=True)
 else:
-    st.warning("⚠️ Arquivo de dados não encontrado no repositório.")
+    st.error("⚠️ Arquivo 'dados_marco_2026.csv' não encontrado.")
+    st.write("Arquivos presentes no seu GitHub atualmente:")
+    st.code(os.listdir('.'))
